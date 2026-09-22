@@ -1,573 +1,103 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-  <meta name="theme-color" content="#0b0f14" />
-  <title>Instant Replay (Web) — Adjustable Delay + PWA</title>
-  <!-- If you create manifest.webmanifest, uncomment this line -->
-  <!-- <link rel="manifest" href="manifest.webmanifest"> -->
-  <style>
-    :root { --bg:#0b0f14; --card:#121821; --muted:#97a0ad; --text:#e8eef6; --accent:#4cc9f0; }
-    html, body { height:100%; }
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background:var(--bg); color:var(--text); }
-    header { padding:14px 18px; border-bottom:1px solid #1e2633; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-    header h1 { font-size:18px; margin:0; }
-    .pill { background:#182232; border:1px solid #243149; padding:6px 10px; border-radius:999px; font-size:12px; color:var(--muted); }
-    .wrap { max-width:1200px; margin:0 auto; padding:16px; display:grid; grid-template-columns:350px 1fr; gap:16px; }
-    @media (max-width:980px){ .wrap{ grid-template-columns:1fr; } }
-    .panel { background:var(--card); border:1px solid #1e2633; border-radius:14px; padding:14px; }
-    .panel h2 { font-size:14px; margin:0 0 10px; color:var(--muted); }
-    .controls { display:grid; gap:12px; }
-    label { display:grid; gap:6px; font-size:12px; color:var(--muted); }
-    select, input[type=number], input[type=range] { appearance:none; width:100%; background:#0e1520; color:var(--text); padding:10px 12px; border-radius:10px; border:1px solid #243149; outline:none; font-size:14px; }
-    input[type=range]{ height:36px; padding:0 2px; }
-    .row { display:flex; gap:10px; }
-    .row > * { flex:1; }
-    .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; background:linear-gradient(180deg,#1c2535,#131b29); color:#eaf4ff; border:1px solid #22314a; padding:10px 12px; border-radius:12px; cursor:pointer; font-weight:600; user-select:none; }
-    .btn.primary { background:linear-gradient(180deg,#2986ff,#0f66d6); border-color:#0f66d6; }
-    .btn.success { background:linear-gradient(180deg,#22c55e,#16a34a); border-color:#15803d; }
-    .btn[disabled]{ opacity:.6; cursor:not-allowed; }
-    .video-grid { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
-    @media (max-width:980px){ .video-grid{ grid-template-columns:1fr; } }
-    .video-card{ position:relative; background:#000; border-radius:14px; overflow:hidden; border:1px solid #1e2633; }
-    .video-card header{ position:absolute; inset:auto 0 0 0; background:linear-gradient(180deg,transparent,rgba(0,0,0,.5)); display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 10px; border:none; }
-    .video-card .tag{ font-size:12px; color:#d2dbe7; background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.12); padding:4px 8px; border-radius:999px; }
-    .mirrored { transform: scaleX(-1); }
-    /* Critical: keep pixels undistorted; letterbox bars when needed */
-    .video-card video,
-    .video-card canvas { width:100%; height:auto; display:block; background:#000; object-fit:contain; }
-    .statline{ margin-top:8px; font-size:12px; color:var(--muted); display:flex; gap:12px; flex-wrap:wrap; }
-    .note{ font-size:12px; color:var(--muted); line-height:1.5; }
-    .warn{ color:#ffd166; }
-    footer{ max-width:1200px; margin:8px auto 24px; padding:0 16px; }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07111f">
+  <meta name="description" content="Private, on-device delayed camera replay for coaching and skill review.">
+  <meta name="color-scheme" content="dark">
+  <title>Replay — Delayed Camera Review</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-  <header>
-    <h1>Instant Replay (Gym)</h1>
-    <span class="pill">HTTPS required • PWA-ready</span>
-    <button id="installBtn" class="btn" style="margin-left:auto;display:none">➕ Install App</button>
-    <button id="popOutBtn" class="btn">↗ Open Standalone</button>
+  <header class="app-header">
+    <div><p class="eyebrow">COASTAL GYM</p><h1>Replay</h1></div>
+    <div class="header-actions">
+      <span id="connectionBadge" class="badge">Ready</span>
+      <button id="installBtn" class="button button-secondary" hidden>Install</button>
+      <button id="fullscreenBtn" class="button button-secondary">Full screen</button>
+    </div>
   </header>
 
-  <div class="wrap">
-    <aside class="panel">
-      <h2>Controls</h2>
-      <div class="controls">
-        <label>Camera<select id="cameraSelect"></select></label>
-        <div class="row">
-          <label>Capture Resolution<select id="resSelect">
-            <option value="640x360">640×360</option>
-            <option value="1280x720" selected>1280×720</option>
-            <option value="1920x1080">1920×1080</option>
-          </select></label>
-          <label>Capture FPS<select id="fpsSelect">
-            <option value="15">15</option>
-            <option value="24">24</option>
-            <option value="30" selected>30</option>
-            <option value="60">60</option>
-          </select></label>
-        </div>
-
-        <div class="row">
-          <label>Delayed Resolution<select id="delayResSelect">
-            <option value="auto" selected>Auto (match camera)</option>
-            <option value="426x240">240p (fast)</option>
-            <option value="640x360">360p</option>
-            <option value="854x480">480p</option>
-            <option value="1280x720">720p</option>
-            <option value="1920x1080">1080p</option>
-            <!-- Portrait presets -->
-            <option value="720x1280">720×1280 (portrait)</option>
-            <option value="1080x1920">1080×1920 (portrait)</option>
-          </select></label>
-          <label>Preview Size<select id="previewSizeSelect">
-            <option value="full">Full</option>
-            <option value="half">Half</option>
-            <option value="quarter">Quarter</option>
-            <option value="hidden" selected>Hidden</option>
-          </select></label>
-        </div>
-
-        <div class="row">
-          <label>Delay (seconds)
-            <input id="delayRange" type="range" min="0" max="120" value="6" step="1" />
-            <div class="statline"><span>Current delay: <strong id="delayVal">6s</strong> · Max 120s</span></div>
-          </label>
-          <label>Delay Engine<select id="engineSelect">
-            <option value="auto" selected>Auto</option>
-            <option value="mse">Compressed (long)</option>
-            <option value="canvas">Memory (short)</option>
-          </select></label>
-        </div>
-
-        <div class="row">
-          <button id="startBtn" class="btn primary">▶ Start Camera</button>
-          <button id="stopBtn" class="btn" disabled>■ Stop</button>
-        </div>
-        <div class="row">
-          <button id="flipBtn" class="btn">🔄 Flip (front/rear)</button>
-          <button id="mirrorBtn" class="btn">🪞 Toggle Mirror</button>
-        </div>
-
-        <hr style="border:none;border-top:1px solid #1e2633; margin:4px 0;"/>
-        <h2>Save a Clip</h2>
-        <label>Clip length (seconds)<input id="clipLen" type="number" min="3" max="30" value="8" /></label>
-        <div class="row">
-          <button id="recordClipBtn" class="btn success" disabled>⏺️ Save last N seconds</button>
-          <a id="downloadLink" class="btn" style="display:none">⬇️ Download</a>
-        </div>
-        <p class="note" id="clipNote">Long-delay mode slices from the encoded buffer (stable on iOS). Short-delay mode records the delayed canvas.</p>
+  <main class="app-shell">
+    <section class="viewer-panel" aria-labelledby="viewerTitle">
+      <div class="section-heading">
+        <div><p class="eyebrow">DELAYED VIEW</p><h2 id="viewerTitle">Athlete replay</h2></div>
+        <output id="delayBadge" class="delay-badge">10 seconds behind</output>
       </div>
+
+      <div id="viewer" class="viewer" tabindex="0">
+        <video id="delayedVideo" autoplay playsinline muted></video>
+        <canvas id="delayedCanvas" hidden></canvas>
+        <div id="viewerMessage" class="viewer-message">
+          <strong>Camera is stopped</strong><span>Choose a delay and start the camera.</span>
+        </div>
+        <div class="viewer-overlay"><span id="engineBadge">On-device</span><span id="actualBadge">No camera</span></div>
+      </div>
+
+      <div class="primary-controls">
+        <button id="startBtn" class="button button-primary">Start camera</button>
+        <button id="stopBtn" class="button button-danger" disabled>Stop</button>
+        <button id="flipBtn" class="button button-secondary" disabled>Switch camera</button>
+        <button id="mirrorBtn" class="button button-secondary" aria-pressed="false">Mirror: off</button>
+      </div>
+
+      <div class="delay-control">
+        <label for="delayRange">Replay delay <strong id="delayValue">10 seconds</strong></label>
+        <input id="delayRange" type="range" min="1" max="120" value="10" step="1">
+        <div class="range-labels"><span>1 sec</span><span>120 sec</span></div>
+        <p id="restartNote" class="inline-note" hidden>Release the slider to apply the new delay.</p>
+      </div>
+    </section>
+
+    <aside class="side-panel">
+      <section class="card" aria-labelledby="clipTitle">
+        <div class="section-heading compact"><div><p class="eyebrow">CLIP</p><h2 id="clipTitle">Record the replay</h2></div></div>
+        <label for="clipLength">Length</label>
+        <select id="clipLength">
+          <option value="5">5 seconds</option><option value="8" selected>8 seconds</option>
+          <option value="10">10 seconds</option><option value="15">15 seconds</option>
+          <option value="20">20 seconds</option><option value="30">30 seconds</option>
+        </select>
+        <button id="recordClipBtn" class="button button-success button-block" disabled>Record next 8 seconds</button>
+        <a id="downloadLink" class="button button-secondary button-block" hidden>Download clip</a>
+        <p class="help-text">Recording begins when you press the button and captures exactly what appears in the delayed view.</p>
+      </section>
+
+      <details class="card settings-card">
+        <summary>Camera and quality settings</summary>
+        <div class="settings-grid">
+          <label for="cameraSelect">Camera</label>
+          <select id="cameraSelect"><option value="">Default camera</option></select>
+          <label for="captureResolution">Camera quality</label>
+          <select id="captureResolution"><option value="640x360">360p</option><option value="1280x720" selected>720p — recommended</option><option value="1920x1080">1080p</option></select>
+          <label for="replayResolution">Replay quality</label>
+          <select id="replayResolution"><option value="426x240">240p — lowest battery use</option><option value="640x360">360p</option><option value="854x480" selected>480p — recommended</option><option value="1280x720">720p</option></select>
+          <label for="captureFps">Camera frame rate</label>
+          <select id="captureFps"><option value="15">15 FPS</option><option value="30" selected>30 FPS — recommended</option><option value="60">60 FPS camera / 30 FPS replay</option></select>
+        </div>
+        <p class="help-text">Settings apply the next time the camera starts. Replay processing is capped at 30 FPS to control heat and battery use.</p>
+      </details>
+
+      <section class="card privacy-card" aria-labelledby="privacyTitle">
+        <p class="eyebrow">PRIVACY</p><h2 id="privacyTitle">Video stays on this device</h2>
+        <p>Replay does not upload or transmit camera video. Downloaded clips become normal files on this device, so follow your organization’s recording, consent, and deletion policies.</p>
+      </section>
+
+      <section class="card diagnostics-card" aria-labelledby="statusTitle">
+        <p class="eyebrow">STATUS</p><h2 id="statusTitle">Session details</h2>
+        <dl><div><dt>Camera</dt><dd id="cameraStatus">Stopped</dd></div><div><dt>Replay</dt><dd id="replayStatus">Waiting</dd></div><div><dt>Buffer</dt><dd id="bufferStatus">0 seconds</dd></div></dl>
+      </section>
     </aside>
-
-    <main class="panel">
-      <h2>Preview</h2>
-      <div class="video-grid">
-        <div class="video-card" id="liveCard">
-          <video id="live" autoplay playsinline muted></video>
-          <header>
-            <span class="tag">Live Camera</span>
-            <span class="tag" id="liveInfo">—</span>
-          </header>
-        </div>
-        <div class="video-card">
-          <video id="delayedVideo" autoplay playsinline muted></video>
-          <canvas id="delayedCanvas" style="display:none"></canvas>
-          <header>
-            <span class="tag">Delayed View</span>
-            <span class="tag" id="delayInfo">warming up…</span>
-          </header>
-        </div>
-      </div>
-      <div class="statline" id="stats">—</div>
-    </main>
-  </div>
-
-  <footer>
-    <p class="note"><strong>Notes:</strong> Works on Safari, Chrome, Edge over HTTPS. If embedded (e.g., Wix HTML iFrame), camera may be blocked—use the <em>Open Standalone</em> button or link out to a dedicated URL.</p>
-    <p class="note warn" id="embedWarning" style="display:none">Embedded viewer detected. Camera prompts are often blocked. Open standalone.</p>
-  </footer>
-
-  <script>
-  (() => {
-    // --- Elements
-    const liveEl = document.getElementById('live');
-    const delayedVideo = document.getElementById('delayedVideo');
-    const delayedCanvas = document.getElementById('delayedCanvas');
-    const dctx = delayedCanvas.getContext('2d');
-    const liveCard = document.getElementById('liveCard');
-
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const flipBtn = document.getElementById('flipBtn');
-    const mirrorBtn = document.getElementById('mirrorBtn');
-
-    const cameraSelect = document.getElementById('cameraSelect');
-    const resSelect = document.getElementById('resSelect');
-    const fpsSelect = document.getElementById('fpsSelect');
-    const delayResSelect = document.getElementById('delayResSelect');
-    const previewSizeSelect = document.getElementById('previewSizeSelect');
-    const engineSelect = document.getElementById('engineSelect');
-
-    const delayRange = document.getElementById('delayRange');
-    const delayVal = document.getElementById('delayVal');
-    const clipLen = document.getElementById('clipLen');
-    const recordClipBtn = document.getElementById('recordClipBtn');
-    const downloadLink = document.getElementById('downloadLink');
-    const clipNote = document.getElementById('clipNote');
-
-    const installBtn = document.getElementById('installBtn');
-    const popOutBtn = document.getElementById('popOutBtn');
-
-    const statsEl = document.getElementById('stats');
-    const liveInfo = document.getElementById('liveInfo');
-    const delayInfo = document.getElementById('delayInfo');
-
-    // --- Global state
-    let stream = null; let facingMode = 'environment'; let mirrored = false;
-    let capW = 1280, capH = 720, fps = 30; // capture settings
-    let delayW = 1280, delayH = 720;       // delayed processing resolution (priority)
-    let delaySeconds = parseInt(delayRange.value, 10);
-
-    // Processing canvas (we draw here at delay resolution)
-    const procCanvas = document.createElement('canvas');
-    const pctx = procCanvas.getContext('2d');
-
-    // Canvas engine (short delay)
-    const MAX_DELAY_SECONDS = 120; let buffer = []; let bufferSize = 0; let writeIndex = 0; let framesSeen = 0;
-    let captureRAF = null; let captureInterval = null; let playbackInterval = null;
-
-    // MSE engine (long delay)
-    let mediaSource = null, sourceBuffer = null, recorder = null, recMime = '', recTimeslice = 1000;
-    const chunkQueue = []; let appendedCount = 0; let mseStarted = false;
-
-    // PWA install prompt
-    let deferredPrompt = null;
-
-    // --- Helpers
-    const parseRes = v => { const [w,h] = v.split('x').map(Number); return { w, h }; };
-
-    function setDelayResolution(w, h){
-      delayW=w; delayH=h;
-      procCanvas.width=w; procCanvas.height=h;
-      delayedCanvas.width=w; delayedCanvas.height=h;
-      // Keep the on‑page box the same shape (prevents CSS stretch)
-      const ratio = (w && h) ? (w + ' / ' + h) : '';
-      delayedCanvas.style.aspectRatio = ratio;
-      delayedVideo.style.aspectRatio  = ratio;
-    }
-
-    function setPreviewSize(sz){
-      const map = { full:'', half:'scale(0.5)', quarter:'scale(0.25)', hidden:'scale(0)' };
-      liveCard.style.transformOrigin='top left';
-      liveCard.style.transform = map[sz]||'';
-      liveCard.style.height = (sz==='hidden')? '0px' : '';
-    }
-
-    function pickRecorderMime(){
-      const list = ['video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
-      for (const m of list){ if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m; }
-      return '';
-    }
-
-    async function listCameras(){
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const vids = devices.filter(d=>d.kind==='videoinput');
-        cameraSelect.innerHTML = '';
-        vids.forEach((d,i)=>{
-          const o=document.createElement('option');
-          o.value=d.deviceId; o.textContent=d.label || `Camera ${i+1}`;
-          cameraSelect.appendChild(o);
-        });
-        if(!vids.length){
-          const o=document.createElement('option'); o.value=''; o.textContent='No cameras found'; cameraSelect.appendChild(o);
-        }
-      } catch(e){ console.warn('enumerateDevices failed', e); }
-    }
-
-    function stopLoops(){
-      if(captureRAF){ liveEl.cancelVideoFrameCallback?.(captureRAF); captureRAF=null; }
-      if(captureInterval){ clearInterval(captureInterval); captureInterval=null; }
-      if(playbackInterval){ clearInterval(playbackInterval); playbackInterval=null; }
-    }
-
-    function stopEverything(){
-      stopLoops();
-      if(recorder){ try{ recorder.stop(); }catch{} recorder=null; }
-      if(mediaSource){ try{ mediaSource.endOfStream(); }catch{} mediaSource=null; }
-      if(sourceBuffer){ try{ sourceBuffer.abort(); }catch{} sourceBuffer=null; }
-      chunkQueue.length=0; appendedCount=0; mseStarted=false;
-
-      if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
-
-      startBtn.disabled=false; stopBtn.disabled=true; recordClipBtn.disabled=true; downloadLink.style.display='none';
-      delayInfo.textContent='stopped'; liveInfo.textContent='—'; statsEl.textContent='—';
-
-      delayedVideo.removeAttribute('src'); delayedVideo.srcObject=null; delayedVideo.style.display='';
-      dctx.clearRect(0,0,delayedCanvas.width,delayedCanvas.height); delayedCanvas.style.display='none';
-    }
-
-    // draw live to processing canvas with letterboxing (no stretch)
-    const FIT_MODE = 'contain'; // or 'cover' to center-crop
-    function drawToProc(){
-      const sw = liveEl.videoWidth  || capW;
-      const sh = liveEl.videoHeight || capH;
-      const dw = procCanvas.width;
-      const dh = procCanvas.height;
-      if (!sw || !sh || !dw || !dh) return;
-
-      const scaleContain = Math.min(dw/sw, dh/sh);
-      const scaleCover   = Math.max(dw/sw, dh/sh);
-      const scale = (FIT_MODE==='cover') ? scaleCover : scaleContain;
-
-      const rw = Math.round(sw * scale);
-      const rh = Math.round(sh * scale);
-      const dx = Math.round((dw - rw) / 2);
-      const dy = Math.round((dh - rh) / 2);
-
-      pctx.clearRect(0,0,dw,dh);
-      pctx.drawImage(liveEl, 0,0, sw,sh, dx,dy, rw,rh);
-    }
-
-    async function startCamera(){
-      stopEverything();
-
-      ({w:capW,h:capH} = parseRes(resSelect.value));
-      fps = parseInt(fpsSelect.value,10);
-
-      // Build constraints, start camera first so we know real videoWidth/Height
-      const video = { width:{ideal:capW}, height:{ideal:capH}, frameRate:{ideal:fps} };
-      if (cameraSelect.value) video.deviceId = { exact: cameraSelect.value }; else video.facingMode = { ideal: facingMode };
-
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio:false, video });
-        liveEl.srcObject = stream; liveEl.muted = true; await liveEl.play().catch(()=>{});
-        listCameras(); startBtn.disabled=true; stopBtn.disabled=false; recordClipBtn.disabled=false;
-
-        // Choose delayed resolution (support 'auto')
-        const sel = delayResSelect.value;
-        if (sel === 'auto') {
-          const vw = liveEl.videoWidth || capW;
-          const vh = liveEl.videoHeight || capH;
-          const longSide = Math.max(vw, vh);
-          const targetLong = (longSide >= 1920) ? 1920 : (longSide >= 1280) ? 1280 : 854;
-          const ar = vw / vh;
-          let dw, dh;
-          if (vw >= vh) { dw = targetLong; dh = Math.round(targetLong / ar); }
-          else          { dh = targetLong; dw = Math.round(targetLong * ar); }
-          setDelayResolution(dw, dh);
-        } else {
-          const { w:dw, h:dh } = parseRes(sel);
-          setDelayResolution(dw, dh);
-        }
-
-        liveEl.classList.toggle('mirrored', mirrored);
-        delayedCanvas.classList.toggle('mirrored', mirrored);
-        delayedVideo.classList.toggle('mirrored', mirrored);
-
-        if (window.top !== window.self) { const warn=document.getElementById('embedWarning'); if (warn) warn.style.display='block'; }
-
-        const desired = engineSelect.value;
-        const engine = (desired==='auto') ? ((delaySeconds>25 && pickRecorderMime())? 'mse' : 'canvas') : desired;
-        if (engine==='mse') startMSEEngine(); else startCanvasEngine();
-
-      } catch(err){
-        console.error(err);
-        const map={ NotAllowedError:'Permission blocked. Click the camera icon in the address bar and allow access.',
-                    NotFoundError:'No camera found. Try switching devices.',
-                    NotReadableError:'Camera is in use by another app. Close other apps.',
-                    OverconstrainedError:'Requested resolution/FPS not supported. Try lowering it.',
-                    SecurityError:'Camera requires HTTPS or localhost.' };
-        alert(map[err.name] || 'Could not start camera. Make sure you are on HTTPS and granted camera permission.');
-      }
-    }
-
-    // ---- Canvas engine (short delay, adjustable resolution)
-    function startCanvasEngine(){
-      delayedVideo.style.display='none'; delayedCanvas.style.display='';
-      const bufFPS = Math.min(fps, 30);
-      bufferSize = Math.max(1, Math.round(Math.min(delaySeconds, MAX_DELAY_SECONDS) * bufFPS));
-      buffer = new Array(bufferSize).fill(null).map(()=>{ const c=document.createElement('canvas'); c.width=delayW; c.height=delayH; return c; });
-      writeIndex=0; framesSeen=0;
-      const intervalMs = Math.max(1000/bufFPS, 16); let last=0;
-
-      function captureLoop(now){
-        if(!last || (now-last)>=intervalMs-2){
-          drawToProc();
-          const c = buffer[writeIndex]; c.getContext('2d').drawImage(procCanvas,0,0,delayW,delayH);
-          writeIndex=(writeIndex+1)%bufferSize; framesSeen++; last=now;
-        }
-        captureRAF = liveEl.requestVideoFrameCallback(captureLoop);
-      }
-
-      if(liveEl.requestVideoFrameCallback) captureRAF = liveEl.requestVideoFrameCallback(captureLoop);
-      else captureInterval = setInterval(()=>{
-        drawToProc(); const c=buffer[writeIndex]; c.getContext('2d').drawImage(procCanvas,0,0,delayW,delayH);
-        writeIndex=(writeIndex+1)%bufferSize; framesSeen++;
-      }, intervalMs);
-
-      playbackInterval = setInterval(()=>{
-        const delayFrames = Math.max(0, Math.min(bufferSize-1, Math.round(Math.min(delaySeconds,MAX_DELAY_SECONDS)*bufFPS)));
-        const have = Math.min(framesSeen, bufferSize);
-        if(have<=delayFrames){ delayInfo.textContent = `warming up… ${Math.max(0, delayFrames-have)}f`; return; }
-        const read = (writeIndex - delayFrames - 1 + bufferSize) % bufferSize;
-        dctx.drawImage(buffer[read], 0,0,delayW,delayH);
-        delayInfo.textContent = `${delaySeconds}s behind (memory)`;
-        renderStats('Canvas', have, bufferSize, bufFPS);
-      }, intervalMs);
-
-      clipNote.textContent = 'Short-delay engine: clip is recorded from the delayed canvas (works where supported).';
-    }
-
-    function renderStats(engine, have, size, bufFPS){
-      liveInfo.textContent = `${capW}×${capH}@${fps}`;
-      const delayFrames = Math.round(Math.min(delaySeconds,MAX_DELAY_SECONDS)*bufFPS);
-      statsEl.textContent = `Engine: ${engine} · Delay res: ${delayW}×${delayH} · Buffer: ${have}/${size} · Current delay: ${delayFrames}f (${delaySeconds}s)`;
-    }
-
-    // ---- MSE engine (long delay, encode from processing canvas)
-    function startMSEEngine(){
-      const mime = pickRecorderMime();
-      if(!mime){ console.warn('No suitable MediaRecorder type, falling back.'); startCanvasEngine(); return; }
-      recMime = mime;
-
-      delayedVideo.style.display=''; delayedCanvas.style.display='none';
-      const bufFPS = Math.min(fps, 30);
-      const streamOut = procCanvas.captureStream(bufFPS);
-
-      try { recorder = new MediaRecorder(streamOut, { mimeType: recMime, videoBitsPerSecond: 2500000 }); }
-      catch(e){ console.warn('MediaRecorder init failed',e); alert('Recording pipeline not supported here. Falling back.'); startCanvasEngine(); return; }
-
-      mediaSource = new MediaSource();
-      delayedVideo.src = URL.createObjectURL(mediaSource);
-
-      mediaSource.addEventListener('sourceopen', ()=>{
-        try{ sourceBuffer = mediaSource.addSourceBuffer(recMime); }
-        catch(e){ console.error('addSourceBuffer failed',e); alert('This browser does not support compressed delay mode.'); stopEverything(); return; }
-        sourceBuffer.mode='sequence'; sourceBuffer.addEventListener('updateend', pumpMSE);
-      }, { once:true });
-
-      recorder.ondataavailable = e=>{ if(e.data && e.data.size){ chunkQueue.push(e.data); trimChunks(); pumpMSE(); } };
-      recorder.start(recTimeslice);
-
-      // drive procCanvas with camera frames
-      const intervalMs = Math.max(1000/bufFPS, 16);
-      if(liveEl.requestVideoFrameCallback){
-        const loop = () => { drawToProc(); captureRAF = liveEl.requestVideoFrameCallback(loop); };
-        captureRAF = liveEl.requestVideoFrameCallback(loop);
-      } else {
-        captureInterval = setInterval(drawToProc, intervalMs);
-      }
-
-      playbackInterval = setInterval(()=>{
-        pumpMSE(); renderStats('MSE', chunkQueue.length, Math.round((delaySeconds+10)*1000/recTimeslice), bufFPS);
-      }, 500);
-
-      clipNote.textContent = 'Long-delay engine: clip is cut from the internal encoded buffer (more stable on iOS).';
-    }
-
-    function pumpMSE(){
-      if(!sourceBuffer || !mediaSource || sourceBuffer.updating) return;
-      const delayChunks = Math.max(0, Math.round(delaySeconds*1000/recTimeslice));
-      if(!mseStarted){
-        if(chunkQueue.length <= delayChunks+1){ delayInfo.textContent = `warming up… ${delayChunks - chunkQueue.length + 1}s`; return; }
-        mseStarted = true; appendedCount = 0;
-      }
-      const targetIdx = Math.max(0, chunkQueue.length - delayChunks - 1);
-      if(appendedCount <= targetIdx){
-        const blob = chunkQueue[appendedCount];
-        const fr = new FileReader();
-        fr.onload = ()=>{
-          try { sourceBuffer.appendBuffer(new Uint8Array(fr.result)); appendedCount++; delayedVideo.play().catch(()=>{}); delayInfo.textContent = `${delaySeconds}s behind (compressed)`; }
-          catch(e){ console.warn('appendBuffer',e); }
-        };
-        fr.readAsArrayBuffer(blob);
-      }
-    }
-
-    function trimChunks(){
-      const cushion=10; // seconds
-      const maxChunks = Math.round((delaySeconds + cushion)*1000/recTimeslice);
-      if(chunkQueue.length>maxChunks){
-        const removeCount = chunkQueue.length - maxChunks;
-        chunkQueue.splice(0, removeCount);
-        appendedCount = Math.max(0, appendedCount - removeCount);
-        try{
-          const ct = delayedVideo.currentTime;
-          const removeTo = Math.max(0, ct - cushion);
-          if(sourceBuffer && !sourceBuffer.updating) sourceBuffer.remove(0, removeTo);
-        }catch{}
-      }
-    }
-
-    // ---- Clip saving (robust paths)
-    async function saveClip(){
-      const seconds = Math.max(3, Math.min(30, parseInt(clipLen.value||'8',10)));
-      downloadLink.style.display='none';
-
-      if(delayedCanvas.style.display!=='none'){ // Canvas engine path
-        if(!('captureStream' in delayedCanvas) || !window.MediaRecorder){
-          alert('Recording not supported in this browser for canvas mode. Try long-delay mode.');
-          return;
-        }
-        const mime = pickRecorderMime() || 'video/webm';
-        const s = delayedCanvas.captureStream(Math.min(fps,30));
-        const chunks=[]; let cr;
-        try{ cr = new MediaRecorder(s, { mimeType: mime }); }
-        catch(e){ try{ cr = new MediaRecorder(s); }catch(e2){ alert('Could not start clip recorder.'); return; } }
-        cr.ondataavailable = e=>{ if(e.data && e.data.size) chunks.push(e.data); };
-        cr.onstop = ()=>{ const blob = new Blob(chunks, { type: cr.mimeType || mime }); offerDownload(blob); };
-        cr.start(); recordClipBtn.disabled=true; recordClipBtn.textContent='⏺️ Recording…';
-        await new Promise(r=>setTimeout(r, seconds*1000));
-        cr.stop(); recordClipBtn.disabled=false; recordClipBtn.textContent='⏺️ Save last N seconds';
-      } else { // MSE engine path — slice from encoded queue
-        if(!chunkQueue.length){ alert('No data yet for clip.'); return; }
-        const need = Math.max(1, Math.round(seconds*1000/recTimeslice));
-        const parts = chunkQueue.slice(-need);
-        const type = recMime || (parts[0] && parts[0].type) || 'video/webm';
-        const blob = new Blob(parts, { type });
-        offerDownload(blob);
-      }
-    }
-
-    function offerDownload(blob){
-      const url = URL.createObjectURL(blob);
-      const ts=new Date().toISOString().replace(/[:.]/g,'-');
-      const ext = (blob.type && blob.type.includes('mp4'))? 'mp4':'webm';
-      downloadLink.href=url; downloadLink.download=`replay-${ts}.${ext}`;
-      downloadLink.textContent='⬇️ Download clip'; downloadLink.style.display='inline-flex';
-      downloadLink.onclick = () => { setTimeout(()=>URL.revokeObjectURL(url), 4000); };
-    }
-
-    // ---- UI bindings
-    startBtn.addEventListener('click', startCamera);
-    stopBtn.addEventListener('click', stopEverything);
-    flipBtn.addEventListener('click', ()=>{ facingMode = (facingMode==='environment')? 'user':'environment'; startCamera(); });
-    mirrorBtn.addEventListener('click', ()=>{ mirrored=!mirrored; [liveEl,delayedCanvas,delayedVideo].forEach(el=>el.classList.toggle('mirrored', mirrored)); });
-    recordClipBtn.addEventListener('click', saveClip);
-
-    delayRange.addEventListener('input', ()=>{ delaySeconds = parseInt(delayRange.value,10); delayVal.textContent = `${delaySeconds}s`; });
-    resSelect.addEventListener('change', ()=>{ if(stream) startCamera(); });
-    fpsSelect.addEventListener('change', ()=>{ if(stream) startCamera(); });
-    delayResSelect.addEventListener('change', ()=>{ if(stream) startCamera(); });
-    cameraSelect.addEventListener('change', ()=>{ if(stream) startCamera(); });
-    engineSelect.addEventListener('change', ()=>{ if(stream) startCamera(); });
-    previewSizeSelect.addEventListener('change', ()=> setPreviewSize(previewSizeSelect.value));
-
-    // Device list and default preview size
-    listCameras(); setPreviewSize(previewSizeSelect.value);
-
-    // Pop-out (useful when embedded/sandboxed)
-    popOutBtn.addEventListener('click', ()=> window.open(window.location.href, '_blank'));
-
-    // --- PWA: service worker register (only works when sw.js exists and same-origin)
-    if('serviceWorker' in navigator){
-      navigator.serviceWorker.register('sw.js').catch(()=>{ /* ignore if not present */ });
-    }
-    window.addEventListener('beforeinstallprompt', (e)=>{ e.preventDefault(); deferredPrompt = e; installBtn.style.display='inline-flex'; });
-    installBtn.addEventListener('click', async ()=>{ if(!deferredPrompt) return; deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; installBtn.style.display='none'; });
-
-    // Expose debug helpers
-    window.__replay = { startCamera, stopEverything };
-  })();
-  </script>
-
-  <!-- =====================
-       PWA FILES TO CREATE
-       =====================
-  Put these two files next to index.html on your host (GitHub Pages, etc.).
-
-  1) manifest.webmanifest
-  {
-    "name": "Instant Replay (Gym)",
-    "short_name": "Replay",
-    "start_url": ".",
-    "display": "standalone",
-    "background_color": "#0b0f14",
-    "theme_color": "#0b0f14",
-    "icons": [
-      {"src":"icons/icon-192.png","sizes":"192x192","type":"image/png"},
-      {"src":"icons/icon-512.png","sizes":"512x512","type":"image/png"}
-    ]
-  }
-
-  2) sw.js  (simple network-first cache)
-  const VERSION = 'v1.0.0';
-  const ASSETS = [ './', './index.html', './manifest.webmanifest' ];
-  self.addEventListener('install', e=>{
-    e.waitUntil(caches.open(VERSION).then(c=>c.addAll(ASSETS)));
-  });
-  self.addEventListener('activate', e=>{
-    e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==VERSION).map(k=>caches.delete(k)))));
-  });
-  self.addEventListener('fetch', e=>{
-    e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));
-  });
-
-  Place icons at ./icons/icon-192.png and ./icons/icon-512.png (any PNGs to start).
-  -->
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <video id="liveVideo" autoplay playsinline muted hidden></video>
+  <canvas id="processingCanvas" hidden></canvas>
+  <canvas id="clipCanvas" hidden></canvas>
+  <noscript>Replay requires JavaScript to access and process the camera locally.</noscript>
+  <script src="js/app.js" defer></script>
 </body>
 </html>
